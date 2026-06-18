@@ -1,296 +1,381 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>放射線部門 PC端末</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>医療検査連携ポータル - 放射線科部門</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-gray-100">
-  <div id="root"></div>
+<body class="bg-gray-100 font-sans min-h-screen pb-12">
 
-  <script type="text/babel">
-    const { useState, useEffect } = React;
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyAGmEL7f0f-tluguX87xOOrPPetH3F4uSs",
-      authDomain: "callsystemdatabase.firebaseapp.com",
-      projectId: "callsystemdatabase",
-      storageBucket: "callsystemdatabase.firebasestorage.app",
-      messagingSenderId: "214007172640",
-      appId: "1:214007172640:web:392c87463f7eeb08c87645"
-    };
-
-    const appId = 'callsystemdatabase-app';
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-    const auth = firebase.auth();
-
-    const INITIAL_PATIENTS = [
-      { id: "1", name: "一宮 太郎", ward: "A病棟", examType: "CT(頭部)", baseExamType: "CT(頭部)", time: "10:00", status: "waiting", delayedMinutes: null, repliedAt: null, note: "", callType: null, scheduledTime: null },
-      { id: "2", name: "佐藤 花子", ward: "B病棟", examType: "MRI(腰椎)", baseExamType: "MRI(腰椎)", time: "10:30", status: "waiting", delayedMinutes: null, repliedAt: null, note: "", callType: null, scheduledTime: null },
-      { id: "3", name: "鈴木 一郎", ward: "A病棟", examType: "CT(胸部)", baseExamType: "CT(胸部)", time: "11:00", status: "waiting", delayedMinutes: null, repliedAt: null, note: "", callType: null, scheduledTime: null },
-      { id: "4", name: "高橋 健太", ward: "C病棟", examType: "XP(胸部)", baseExamType: "XP(胸部)", time: "11:15", status: "waiting", delayedMinutes: null, repliedAt: null, note: "", callType: null, scheduledTime: null },
-      { id: "5", name: "伊藤 美咲", ward: "A病棟", examType: "CT(腹部)", baseExamType: "CT(腹部)", time: "11:30", status: "waiting", delayedMinutes: null, repliedAt: null, note: "", callType: null, scheduledTime: null },
-    ];
-
-    function App() {
-      const [patients, setPatients] = useState([]);
-      const [currentTime, setCurrentTime] = useState(new Date());
-      const [user, setUser] = useState(null);
-      const [loading, setLoading] = useState(true);
-      const [connError, setConnError] = useState(null);
-      const [setupSuccess, setSetupSuccess] = useState(false);
-
-      const [showLocationModal, setShowLocationModal] = useState(false);
-      const [activePatientId, setActivePatientId] = useState(null);
-      const [activeExamCategory, setActiveExamCategory] = useState('');
-      const [modalStep, setModalStep] = useState(1);
-      const [selectedLocation, setSelectedLocation] = useState('');
-      const [customCallTime, setCustomCallTime] = useState('');
-
-      useEffect(() => {
-        const timer = setInterval(() => setCurrentTime(new Date()), 60000);
-        return () => clearInterval(timer);
-      }, []);
-
-      useEffect(() => {
-        auth.signInAnonymously()
-          .then((cred) => {
-            setUser(cred.user);
-            setLoading(false);
-          })
-          .catch((err) => {
-            setConnError("匿名認証に失敗しました。");
-            setLoading(false);
-          });
-      }, []);
-
-      useEffect(() => {
-        if (!user) return;
-        const patientsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('patients');
-        const unsubscribe = patientsRef.onSnapshot(
-          (snapshot) => {
-            const list = [];
-            snapshot.forEach((doc) => {
-              list.push({ id: doc.id, ...doc.data() });
-            });
-            setPatients(list);
-          },
-          (error) => {
-            setConnError("データベース接続エラーが発生しました。");
-          }
-        );
-        return () => unsubscribe();
-      }, [user]);
-
-      const setupDemoData = async () => {
-        if (!user) return;
-        try {
-          const patientsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('patients');
-          for (const p of INITIAL_PATIENTS) {
-            await patientsRef.doc(p.id).set({ ...p, updatedAt: new Date().toISOString() });
-          }
-          setSetupSuccess(true);
-          setTimeout(() => setSetupSuccess(false), 3000);
-        } catch (err) {
-          setConnError("デモデータの復元に失敗しました。");
-        }
-      };
-
-      const formatTime = (date) => {
-        return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
-      };
-
-      const addMinutesToTimeStr = (timeStr, mins) => {
-        const [h, m] = timeStr.split(':').map(Number);
-        const date = new Date();
-        date.setHours(h);
-        date.setMinutes(m + mins);
-        return formatTime(date);
-      };
-
-      const handleInitialCallClick = (patient) => {
-        const isCT = patient.baseExamType.includes('CT');
-        const isMRI = patient.baseExamType.includes('MRI');
-        setActivePatientId(patient.id);
-        setModalStep(1);
-        setSelectedLocation('');
-        setCustomCallTime('');
-        if (isCT) {
-          setActiveExamCategory('CT');
-          setShowLocationModal(true);
-        } else if (isMRI) {
-          setActiveExamCategory('MRI');
-          setShowLocationModal(true);
-        } else {
-          setActiveExamCategory('OTHER');
-          setModalStep(2);
-          setShowLocationModal(true);
-        }
-      };
-
-      const handleSelectLocation = (location) => {
-        setSelectedLocation(location);
-        setModalStep(2);
-      };
-
-      const submitCall = async (callType, val = null) => {
-        const patient = patients.find(p => p.id === activePatientId);
-        if (!patient) return;
-
-        let updatedExamType = patient.baseExamType;
-        if (selectedLocation) updatedExamType = `${patient.baseExamType} [${selectedLocation}]`;
-
-        const nowStr = formatTime(new Date());
-        let schedTime = null;
-        if (callType === 'scheduled') {
-          schedTime = (typeof val === 'number') ? addMinutesToTimeStr(nowStr, val) : val;
-        }
-
-        const patientsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('patients');
-        await patientsRef.doc(activePatientId).set({
-          status: 'called',
-          examType: updatedExamType,
-          note: "",
-          callType: callType,
-          scheduledTime: schedTime,
-          delayedMinutes: null,
-          delayedTime: null,
-          delayType: null,
-          repliedAt: null,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-
-        setShowLocationModal(false);
-        setActivePatientId(null);
-      };
-
-      const updateStatus = async (id, newStatus, payload = {}) => {
-        const patientsRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('patients');
-        const patient = patients.find(p => p.id === id);
-        if (!patient) return;
-
-        const resetExamType = (newStatus === 'waiting') ? patient.baseExamType : patient.examType;
-
-        await patientsRef.doc(id).set({
-          status: newStatus,
-          examType: resetExamType,
-          note: payload.note !== undefined ? payload.note : (newStatus === 'called' ? "" : patient.note),
-          callType: newStatus === 'waiting' ? null : patient.callType,
-          scheduledTime: newStatus === 'waiting' ? null : patient.scheduledTime,
-          updatedAt: new Date().toISOString()
-        }, { merge: true });
-      };
-
-      if (loading) {
-        return <div className="p-8 text-center text-gray-500">起動中...</div>;
-      }
-
-      return (
-        <div className="p-4 max-w-5xl mx-auto">
-          {connError && <div className="bg-red-500 text-white p-3 rounded mb-4 font-bold">{connError}</div>}
-          <div className="bg-blue-800 text-white p-4 rounded-t-xl flex justify-between items-center shadow-md">
-            <h2 className="text-lg font-bold">🖥️ 放射線部門 PC端末</h2>
-            <button onClick={setupDemoData} className="bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-xs font-bold">デモ復元</button>
-          </div>
-          <div className="bg-white p-4 rounded-b-xl shadow-lg border border-gray-200">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-gray-100 text-gray-600">
-                  <th className="p-2 border">予定</th>
-                  <th className="p-2 border">患者名</th>
-                  <th className="p-2 border">病棟</th>
-                  <th className="p-2 border">検査項目</th>
-                  <th className="p-2 border">病棟からの応答</th>
-                  <th className="p-2 border text-center">操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {patients.filter(p => p.status !== 'completed').map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50">
-                    <td className="p-2 border font-mono">{p.time}</td>
-                    <td className="p-2 border font-bold">
-                      {p.name}
-                      {p.note && <span className="block text-[10px] bg-red-100 text-red-800 px-1 rounded font-bold mt-1">再調整中: {p.note}</span>}
-                    </td>
-                    <td className="p-2 border">{p.ward}</td>
-                    <td className="p-2 border">{p.examType}</td>
-                    <td className="p-2 border font-bold">
-                      {p.status === 'waiting' && <span className="text-gray-400">待機中</span>}
-                      {p.status === 'called' && <span className="text-red-500 animate-pulse">確認中...</span>}
-                      {p.status === 'ready' && <span className="text-green-600">すぐ搬送可 ({p.repliedAt})</span>}
-                      {p.status === 'delayed' && <span className="text-yellow-600">{p.delayType === 'time' ? `${p.delayedTime}` : `${p.delayedMinutes}分後`}搬送可 ({p.repliedAt})</span>}
-                      {p.status === 'unavailable' && <span className="text-red-700">対応不可</span>}
-                      {p.status === 'transfer_requested' && <span className="text-purple-600">搬送指示済</span>}
-                    </td>
-                    <td className="p-2 border text-center">
-                      {p.status === 'waiting' && (
-                        <button onClick={() => handleInitialCallClick(p)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-xs font-bold">搬送依頼</button>
-                      )}
-                      {['ready', 'delayed'].includes(p.status) && (
-                        <button onClick={() => updateStatus(p.id, 'transfer_requested')} className="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs font-bold">最終搬送指示</button>
-                      )}
-                      {p.status === 'transfer_requested' && (
-                        <button onClick={() => updateStatus(p.id, 'completed')} className="bg-gray-600 hover:bg-gray-700 text-white px-3 py-1 rounded text-xs font-bold">完了にする</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {showLocationModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
-                {modalStep === 1 ? (
-                  <div>
-                    <h3 className="font-bold text-center mb-4">搬送先を選択</h3>
-                    <div className="grid grid-cols-2 gap-2">
-                      {activeExamCategory === 'CT' ? (
-                        <>
-                          <button onClick={() => handleSelectLocation('南館1階')} className="p-3 bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold rounded">南館 1階</button>
-                          <button onClick={() => handleSelectLocation('南館地下')} className="p-3 bg-blue-100 hover:bg-blue-200 text-blue-900 font-bold rounded">南館 地下</button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => handleSelectLocation('002室')} className="p-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold rounded">002室</button>
-                          <button onClick={() => handleSelectLocation('007室')} className="p-3 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold rounded">007室</button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <h3 className="font-bold text-center mb-4">打診時間を選択</h3>
-                    <div className="space-y-2">
-                      <button onClick={() => submitCall('immediate')} className="w-full p-2.5 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded">今すぐ搬送を打診</button>
-                      <div className="grid grid-cols-3 gap-1">
-                        <button onClick={() => submitCall('scheduled', 10)} className="p-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 text-xs font-bold rounded">10分後</button>
-                        <button onClick={() => submitCall('scheduled', 20)} className="p-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 text-xs font-bold rounded">20分後</button>
-                        <button onClick={() => submitCall('scheduled', 30)} className="p-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 text-xs font-bold rounded">30分後</button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <button onClick={() => setShowLocationModal(false)} className="mt-4 w-full p-2 bg-gray-200 hover:bg-gray-300 rounded text-sm font-bold">閉じる</button>
-              </div>
-            </div>
-          )}
+    <header class="bg-blue-800 text-white p-4 shadow-md">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold flex items-center">
+                <i class="fa-solid fa-display mr-2"></i>
+                検査呼び出し・双方向ネゴシエーション連携システム（放射線科）
+            </h1>
+            <button id="btn-init" class="bg-blue-700 hover:bg-blue-600 border border-blue-500 rounded px-3 py-1.5 text-xs font-bold transition-all">
+                <i class="fa-solid fa-rotate mr-1"></i> デモデータ初期化
+            </button>
         </div>
-      );
-    }
+    </header>
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<App />);
-  </script>
+    <main class="max-w-7xl mx-auto mt-6 px-4">
+        <div id="error-banner" class="hidden mb-4 p-4 bg-red-600 text-white font-bold rounded-lg shadow-md flex items-center gap-2">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span id="error-message">データベース接続エラー</span>
+        </div>
+
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+            <div class="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+                <h3 class="font-bold text-gray-700 flex items-center">
+                    <i class="fa-solid fa-wave-square mr-2 text-blue-600"></i>
+                    本日の検査呼び出しステータス（リアルタイム同期）
+                </h3>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead class="bg-gray-100 text-gray-600">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-semibold">予定時間</th>
+                            <th class="px-4 py-3 text-left font-semibold">患者名</th>
+                            <th class="px-4 py-3 text-left font-semibold">病棟</th>
+                            <th class="px-4 py-3 text-left font-semibold">検査内容</th>
+                            <th class="px-4 py-3 text-left font-semibold">病棟からの応答状況</th>
+                            <th class="px-4 py-3 text-center font-semibold">操作アクション</th>
+                        </tr>
+                    </thead>
+                    <tbody id="patient-table-body" class="bg-white divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="6" class="text-center py-8 text-gray-400">データを読み込み中...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <div id="call-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div class="bg-blue-800 text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold text-base"><i class="fa-solid fa-map-pin mr-2"></i> 搬送依頼の作成</h3>
+                <button onclick="closeModal()" class="text-white hover:bg-blue-700 px-2 py-1 rounded">&times;</button>
+            </div>
+            
+            <div id="modal-step-1" class="p-6 hidden">
+                <p class="text-sm text-gray-600 mb-4 font-semibold text-center">
+                    <span id="modal-patient-name" class="font-bold text-gray-900"></span>様の <span id="modal-exam-cat" class="text-blue-600 font-bold"></span>検査室を指定してください。
+                </p>
+                <div id="location-options" class="grid grid-cols-2 gap-3">
+                    </div>
+            </div>
+
+            <div id="modal-step-2" class="p-6 hidden">
+                <p class="text-sm text-gray-700 mb-4 font-semibold text-center">
+                    病棟への打診方法を選択してください。
+                </p>
+                <div class="space-y-4">
+                    <button onclick="submitCallAction('immediate')" class="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg shadow transition-colors flex justify-center items-center gap-2">
+                        <i class="fa-solid fa-bell"></i> 「すぐ搬送」を依頼する
+                    </button>
+                    <div class="relative flex py-1 items-center">
+                        <div class="flex-grow border-t border-gray-300"></div>
+                        <span class="flex-shrink mx-4 text-gray-400 text-xs font-bold">または時間を指定</span>
+                        <div class="flex-grow border-t border-gray-300"></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="submitCallAction('scheduled', 10)" class="py-2 bg-yellow-50 border border-yellow-300 text-yellow-800 hover:bg-yellow-100 font-bold rounded-lg text-xs">10分後</button>
+                        <button onclick="submitCallAction('scheduled', 20)" class="py-2 bg-yellow-50 border border-yellow-300 text-yellow-800 hover:bg-yellow-100 font-bold rounded-lg text-xs">20分後</button>
+                        <button onclick="submitCallAction('scheduled', 30)" class="py-2 bg-yellow-50 border border-yellow-300 text-yellow-800 hover:bg-yellow-100 font-bold rounded-lg text-xs">30分後</button>
+                    </div>
+                    <div class="flex items-center gap-2 bg-yellow-50 p-2 rounded-xl border border-yellow-200 justify-between">
+                        <span class="text-xs font-bold text-yellow-950">時刻を直接指定:</span>
+                        <input type="time" id="custom-call-time" class="w-[90px] p-1 border border-yellow-300 rounded text-center font-mono font-bold">
+                        <button onclick="submitCallWithCustomTime()" class="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs font-bold rounded">送信</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 px-4 py-3 flex justify-between border-t border-gray-100 text-xs font-bold">
+                <button id="modal-back-btn" class="px-3 py-1.5 bg-gray-200 text-gray-700 rounded hidden">← 戻る</button>
+                <button onclick="closeModal()" class="ml-auto px-3 py-1.5 bg-gray-300 text-gray-700 rounded">閉じる</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAGmEL7f0f-tluguX87xOOrPPetH3F4uSs",
+            authDomain: "callsystemdatabase.firebaseapp.com",
+            projectId: "callsystemdatabase",
+            storageBucket: "callsystemdatabase.firebasestorage.app",
+            messagingSenderId: "214007172640",
+            appId: "1:214007172640:web:392c87463f7eeb08c87645"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const appId = 'callsystemdatabase-app';
+
+        let patientsData = [];
+        let activePatientId = null;
+        let selectedLocation = "";
+        let activeExamCategory = "";
+
+        // 匿名認証
+        signInAnonymously(auth).catch(err => {
+            showError("認証エラーが発生しました。");
+        });
+
+        // データ監視
+        const patientsRef = collection(db, 'artifacts', appId, 'public', 'data', 'patients');
+        onSnapshot(patientsRef, (snapshot) => {
+            patientsData = [];
+            snapshot.forEach(doc => {
+                patientsData.push({ id: doc.id, ...doc.data() });
+            });
+            renderTable();
+        }, (err) => {
+            showError("Firestoreとのリアルタイム同期に失敗しました。環境を確認してください。");
+        });
+
+        function showError(msg) {
+            document.getElementById("error-banner").classList.remove("hidden");
+            document.getElementById("error-message").innerText = msg;
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById("patient-table-body");
+            tbody.innerHTML = "";
+            
+            const activePatients = patientsData.filter(p => p.status !== 'completed');
+            if(activePatients.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400">対象の患者データがありません。「デモデータ初期化」を押してください。</td></tr>`;
+                return;
+            }
+
+            activePatients.sort((a,b) => (a.time || '').localeCompare(b.time || '')).forEach(p => {
+                const tr = document.createElement("tr");
+                let rowClass = "hover:bg-gray-50 transition-colors";
+                if(p.status === 'called') rowClass = "bg-red-50/70 border-l-4 border-red-500";
+                if(p.status === 'transfer_requested') rowClass = "bg-purple-50 border-l-4 border-purple-500 font-medium";
+                tr.className = rowClass;
+
+                // ステータスバッジの解析
+                let badgeHTML = "";
+                let detailHTML = p.repliedAt ? `<span class="text-[10px] text-gray-400 block mt-0.5 font-mono">${p.repliedAt} 応答</span>` : "";
+                
+                switch(p.status) {
+                    case 'waiting':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"><i class="fa-regular fa-clock mr-1"></i>待機中</span>`;
+                        break;
+                    case 'called':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 animate-pulse"><i class="fa-solid fa-bell mr-1"></i>確認中</span>`;
+                        detailHTML = `<span class="text-[10px] text-red-500 block mt-0.5">${p.callType === 'scheduled' ? `打診中 (${p.scheduledTime}希望)` : '打診中 (すぐ希望)'}</span>`;
+                        break;
+                    case 'ready':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><i class="fa-regular fa-circle-check mr-1"></i>すぐ搬送可</span>`;
+                        break;
+                    case 'delayed':
+                        const delayText = p.delayType === 'time' ? `${p.delayedTime} 搬送可` : `${p.delayedMinutes}分後 搬送可`;
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-yellow-100 text-yellow-800"><i class="fa-solid fa-arrow-right mr-1"></i>${delayText}</span>`;
+                        break;
+                    case 'unavailable':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-700 text-white"><i class="fa-regular fa-circle-xmark mr-1"></i>現在不可</span>`;
+                        break;
+                    case 'transfer_requested':
+                        let destTime = "すぐ";
+                        if(p.delayType === 'time' && p.delayedTime) destTime = p.delayedTime;
+                        else if(p.repliedAt && p.delayedMinutes) {
+                            const [h, m] = p.repliedAt.split(':').map(Number);
+                            const d = new Date(); d.setHours(h); d.setMinutes(m + p.delayedMinutes);
+                            destTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                        } else if(p.callType === 'scheduled' && p.scheduledTime) {
+                            destTime = p.scheduledTime;
+                        }
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700"><i class="fa-solid fa-truck-ramp-box mr-1"></i>指示済</span>`;
+                        detailHTML = `<span class="text-[10px] text-purple-600 block mt-0.5 font-mono">${destTime} 搬送予定</span>`;
+                        break;
+                }
+
+                // ボタンエリアの生成
+                let actionHTML = "";
+                if(p.status === 'waiting') {
+                    actionHTML = `<button onclick="openCallModal('${p.id}', '${p.name}', '${p.baseExamType}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"><i class="fa-solid fa-phone mr-1"></i> 搬送確認</button>`;
+                } else if(p.status === 'called') {
+                    actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'waiting')" class="px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded text-xs hover:bg-red-100">取消</button>`;
+                } else if(p.status === 'ready' || p.status === 'delayed') {
+                    actionHTML = `
+                        <div class="flex flex-col gap-1 max-w-[120px] mx-auto">
+                            <button onclick="updatePatientStatus('${p.id}', 'transfer_requested')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold shadow-sm">最終搬送指示</button>
+                            <button onclick="rejectAndReset('${p.id}')" class="px-2 py-0.5 bg-gray-100 border text-gray-600 rounded text-[11px]">再調整</button>
+                        </div>
+                    `;
+                } else if(p.status === 'unavailable') {
+                    actionHTML = `<button onclick="rejectAndReset('${p.id}')" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs border border-gray-300 hover:bg-gray-300">再調整をかける</button>`;
+                } else if(p.status === 'transfer_requested') {
+                    actionHTML = `
+                        <div class="flex flex-col gap-1 max-w-[120px] mx-auto">
+                            <button onclick="updatePatientStatus('${p.id}', 'completed')" class="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-xs font-bold"><i class="fa-solid fa-check mr-1"></i> 受付完了</button>
+                            <button onclick="cancelTransfer('${p.id}', '${p.delayedMinutes || p.delayedTime ? 'delayed' : 'ready'}')" class="text-[10px] text-red-600 underline">指示を取消</button>
+                        </div>
+                    `;
+                }
+
+                tr.innerHTML = `
+                    <td class="px-4 py-3.5 whitespace-nowrap font-mono text-gray-600">${p.time}</td>
+                    <td class="px-4 py-3.5 whitespace-nowrap font-bold text-gray-900">
+                        ${p.name} 様
+                        ${p.note ? `<span class="block text-[10px] text-red-600 bg-red-50 border border-red-100 rounded px-1 mt-0.5 font-normal">⚠️ ${p.note}</span>` : ''}
+                    </td>
+                    <td class="px-4 py-3.5 whitespace-nowrap text-gray-500">${p.ward}</td>
+                    <td class="px-4 py-3.5 whitespace-nowrap text-gray-700 font-semibold">${p.examType}</td>
+                    <td class="px-4 py-3.5 whitespace-nowrap">${badgeHTML}${detailHTML}</td>
+                    <td class="px-4 py-3.5 whitespace-nowrap text-center">${actionHTML}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // グローバル関数として公開
+        window.openCallModal = function(id, name, baseExamType) {
+            activePatientId = id;
+            selectedLocation = "";
+            document.getElementById("modal-patient-name").innerText = name;
+            document.getElementById("call-modal").classList.remove("hidden");
+            
+            const isCT = baseExamType.includes("CT");
+            const isMRI = baseExamType.includes("MRI");
+            
+            const step1 = document.getElementById("modal-step-1");
+            const step2 = document.getElementById("modal-step-2");
+            const backBtn = document.getElementById("modal-back-btn");
+
+            if(isCT || isMRI) {
+                activeExamCategory = isCT ? "CT" : "MRI";
+                document.getElementById("modal-exam-cat").innerText = activeExamCategory;
+                step1.classList.remove("hidden");
+                step2.classList.add("hidden");
+                backBtn.classList.add("hidden");
+                
+                const optDiv = document.getElementById("location-options");
+                if(isCT) {
+                    optDiv.innerHTML = `
+                        <button onclick="selectLocationAction('南館1階')" class="p-3 bg-blue-50 border-2 border-blue-600 font-bold rounded-lg text-sm text-center">南館 1階<span class="block text-xs font-normal text-blue-500">CT室</span></button>
+                        <button onclick="selectLocationAction('南館地下')" class="p-3 bg-indigo-50 border-2 border-indigo-600 font-bold rounded-lg text-sm text-center">南館 地下<span class="block text-xs font-normal text-indigo-500">CT室</span></button>
+                    `;
+                } else {
+                    optDiv.innerHTML = `
+                        <button onclick="selectLocationAction('002')" class="p-3 bg-emerald-50 border-2 border-emerald-600 font-bold font-mono rounded-lg text-sm text-center">002<span class="block text-xs font-normal font-sans text-emerald-600">MRI室</span></button>
+                        <button onclick="selectLocationAction('007')" class="p-3 bg-teal-50 border-2 border-teal-600 font-bold font-mono rounded-lg text-sm text-center">007<span class="block text-xs font-normal font-sans text-teal-600">MRI室</span></button>
+                    `;
+                }
+            } else {
+                activeExamCategory = "OTHER";
+                step1.classList.add("hidden");
+                step2.classList.remove("hidden");
+                backBtn.classList.add("hidden");
+            }
+        };
+
+        window.selectLocationAction = function(loc) {
+            selectedLocation = loc;
+            document.getElementById("modal-step-1").classList.add("hidden");
+            document.getElementById("modal-step-2").classList.remove("hidden");
+            
+            const backBtn = document.getElementById("modal-back-btn");
+            backBtn.classList.remove("hidden");
+            backBtn.onclick = () => {
+                document.getElementById("modal-step-1").classList.remove("hidden");
+                document.getElementById("modal-step-2").classList.add("hidden");
+                backBtn.classList.add("hidden");
+            };
+        };
+
+        window.closeModal = function() {
+            document.getElementById("call-modal").classList.add("hidden");
+        };
+
+        window.submitCallAction = async function(type, val = null) {
+            const target = patientsData.find(p => p.id === activePatientId);
+            if(!target) return;
+
+            let finalExamType = target.baseExamType;
+            if(selectedLocation) finalExamType = `${target.baseExamType} [${selectedLocation}]`;
+
+            const d = new Date();
+            const nowStr = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+            let schedTime = null;
+
+            if(type === 'scheduled' && typeof val === 'number') {
+                d.setMinutes(d.getMinutes() + val);
+                schedTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+            }
+
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', activePatientId);
+            await setDoc(docRef, {
+                status: 'called',
+                examType: finalExamType,
+                callType: type,
+                scheduledTime: schedTime,
+                note: "", delayedMinutes: null, delayedTime: null, delayType: null, repliedAt: null,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            closeModal();
+        };
+
+        window.submitCallWithCustomTime = function() {
+            const timeVal = document.getElementById("custom-call-time").value;
+            if(timeVal) {
+                window.submitCallAction('scheduled', timeVal);
+            }
+        };
+
+        window.updatePatientStatus = async function(id, status) {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', id);
+            await setDoc(docRef, { status: status, updatedAt: new Date().toISOString() }, { merge: true });
+        };
+
+        window.cancelTransfer = async function(id, prevStatus) {
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', id);
+            await setDoc(docRef, { status: prevStatus, updatedAt: new Date().toISOString() }, { merge: true });
+        };
+
+        window.rejectAndReset = async function(id) {
+            const p = patientsData.find(x => x.id === id);
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', id);
+            await setDoc(docRef, {
+                status: 'waiting',
+                examType: p.baseExamType,
+                note: "時間不都合等のため再調整中",
+                callType: null, scheduledTime: null, delayedMinutes: null, delayedTime: null, delayType: null, repliedAt: null,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+        };
+
+        // 初期デモデータの投入ロジック
+        document.getElementById("btn-init").onclick = async function() {
+            const INITIAL_PATIENTS = [
+                { name: "一宮 太郎", ward: "A病棟", examType: "CT(頭部)", baseExamType: "CT(頭部)", time: "10:00", status: "waiting", note: "" },
+                { name: "佐藤 花子", ward: "B病棟", examType: "MRI(腰椎)", baseExamType: "MRI(腰椎)", time: "10:30", status: "waiting", note: "" },
+                { name: "鈴木 一郎", ward: "A病棟", examType: "CT(胸部)", baseExamType: "CT(胸部)", time: "11:00", status: "waiting", note: "" },
+                { name: "高橋 健太", ward: "C病棟", examType: "XP(胸部)", baseExamType: "XP(胸部)", time: "11:15", status: "waiting", note: "" },
+                { name: "伊藤 美咲", ward: "A病棟", examType: "CT(腹部)", baseExamType: "CT(腹部)", time: "11:30", status: "waiting", note: "" }
+            ];
+            for(let i=0; i<INITIAL_PATIENTS.length; i++) {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', (i+1).toString());
+                await setDoc(docRef, INITIAL_PATIENTS[i], { merge: false });
+            }
+            alert("デモデータをリセット・同期しました。");
+        };
+    </script>
 </body>
 </html>
