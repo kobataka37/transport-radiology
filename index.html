@@ -31,7 +31,7 @@
             <div class="p-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                 <h3 class="font-bold text-gray-700 flex items-center">
                     <i class="fa-solid fa-wave-square mr-2 text-blue-600"></i>
-                    本日の検査呼び出しステータス（リアルタイム同期）
+                    本日の検査呼び出しステータス（送り・検査中・お迎えのリアルタイム同期）
                 </h3>
             </div>
             
@@ -43,7 +43,7 @@
                             <th class="px-4 py-3 text-left font-semibold">患者名</th>
                             <th class="px-4 py-3 text-left font-semibold">病棟</th>
                             <th class="px-4 py-3 text-left font-semibold">検査内容</th>
-                            <th class="px-4 py-3 text-left font-semibold">病棟からの応答状況</th>
+                            <th class="px-4 py-3 text-left font-semibold">現在の状況</th>
                             <th class="px-4 py-3 text-center font-semibold">操作アクション</th>
                         </tr>
                     </thead>
@@ -55,6 +55,7 @@
         </div>
     </main>
 
+    <!-- モーダル1：送り出し・搬送依頼作成 -->
     <div id="call-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
             <div class="bg-blue-800 text-white p-4 flex justify-between items-center">
@@ -100,6 +101,49 @@
         </div>
     </div>
 
+    <!-- ★ モーダル2：新設：検査終了お迎え依頼の打診画面 -->
+    <div id="pickup-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div class="bg-amber-600 text-white p-4 flex justify-between items-center">
+                <h3 class="font-bold text-base"><i class="fa-solid fa-person-walking-arrow-right mr-2"></i> お迎え依頼の作成</h3>
+                <button onclick="closePickupModal()" class="text-white hover:bg-amber-500 px-2 py-1 rounded">&times;</button>
+            </div>
+            
+            <div class="p-6">
+                <p class="text-sm text-gray-700 mb-4 font-semibold text-center">
+                    <span id="pickup-patient-name" class="font-bold text-gray-900"></span>様の検査が終わりました。<br/>病棟へ伝えるお迎え（または終了予定）時間を指定してください。
+                </p>
+                <div class="space-y-4">
+                    <button onclick="submitPickupAction('immediate')" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-md transition-colors flex justify-center items-center gap-2">
+                        <i class="fa-solid fa-person-walking-arrow-loop-left"></i> 今からすぐのお迎えを依頼する
+                    </button>
+                    
+                    <div class="relative flex py-1 items-center">
+                        <div class="flex-grow border-t border-gray-300"></div>
+                        <span class="flex-shrink mx-4 text-gray-400 text-xs font-bold">何分後かを選択</span>
+                        <div class="flex-grow border-t border-gray-300"></div>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-2">
+                        <button onclick="submitPickupAction('scheduled', 5)" class="py-2 bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 font-bold rounded-lg text-xs">5分後</button>
+                        <button onclick="submitPickupAction('scheduled', 10)" class="py-2 bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 font-bold rounded-lg text-xs">10分後</button>
+                        <button onclick="submitPickupAction('scheduled', 15)" class="py-2 bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 font-bold rounded-lg text-xs">15分後</button>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 bg-amber-50 p-2 rounded-xl border border-amber-200 justify-between">
+                        <span class="text-xs font-bold text-amber-950">任意お迎え時刻指定:</span>
+                        <input type="time" id="custom-pickup-time" class="w-[90px] p-1 border border-amber-300 rounded text-center font-mono font-bold">
+                        <button onclick="submitPickupWithCustomTime()" class="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded">送信</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 px-4 py-3 flex justify-end border-t border-gray-100 text-xs font-bold">
+                <button onclick="closePickupModal()" class="px-3 py-1.5 bg-gray-300 text-gray-700 rounded">閉じる</button>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
@@ -138,10 +182,11 @@
             document.getElementById("error-message").innerText = msg;
         }
 
-        function renderTable() {
+        //        function renderTable() {
             const tbody = document.getElementById("patient-table-body");
             tbody.innerHTML = "";
             
+            // completed(完全完了) 以外の、動いている患者を表示
             const activePatients = patientsData.filter(p => p.status !== 'completed');
             if(activePatients.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400">データがありません。「デモデータ初期化」を押してください。</td></tr>`;
@@ -153,17 +198,22 @@
                 let rowClass = "hover:bg-gray-50 transition-colors";
                 if(p.status === 'called') rowClass = "bg-red-50/70 border-l-4 border-red-500";
                 if(p.status === 'transfer_requested') rowClass = "bg-purple-50 border-l-4 border-purple-500 font-medium";
+                if(p.status === 'exam_in_progress') rowClass = "bg-blue-50/40 border-l-4 border-blue-400";
+                if(p.status === 'pickup_requested') rowClass = "bg-amber-50/70 border-l-4 border-amber-500";
+                if(p.status === 'pickup_replied') rowClass = "bg-emerald-50/50 border-l-4 border-emerald-500";
+
                 tr.className = rowClass;
 
                 let badgeHTML = "";
                 let detailHTML = p.repliedAt ? `<span class="text-[10px] text-gray-400 block mt-0.5 font-mono">${p.repliedAt} 応答</span>` : "";
                 
+                // ★ 新しいステータス（検査中、お迎え依頼中、お迎え回答、帰棟・完了）に合わせた表示分岐
                 switch(p.status) {
                     case 'waiting':
                         badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600"><i class="fa-regular fa-clock mr-1"></i>待機中</span>`;
                         break;
                     case 'called':
-                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 animate-pulse"><i class="fa-solid fa-bell mr-1"></i>確認中</span>`;
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 animate-pulse"><i class="fa-solid fa-bell mr-1"></i>搬送確認中</span>`;
                         const reqTime = p.scheduledTime || '時間指定';
                         detailHTML = `<span class="text-[10px] text-red-500 block mt-0.5">${p.callType === 'scheduled' ? `打診中 (${reqTime}希望)` : '打診中 (すぐ希望)'}</span>`;
                         break;
@@ -187,17 +237,54 @@
                         } else if(p.callType === 'scheduled' && p.scheduledTime) {
                             destTime = p.scheduledTime;
                         }
-                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700"><i class="fa-solid fa-wheelchair-move mr-1"></i>指示済</span>`;
-                        detailHTML = `<span class="text-[10px] text-purple-600 block mt-0.5 font-mono">${destTime} 搬送予定</span>`;
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700"><i class="fa-solid fa-wheelchair-move mr-1"></i>指示済(送り)</span>`;
+                        detailHTML = `<span class="text-[10px] text-purple-600 block mt-0.5 font-mono">${destTime} 搬送中</span>`;
+                        break;
+                    
+                    case 'exam_in_progress':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700"><i class="fa-solid fa-spinner animate-spin mr-1"></i>検査中</span>`;
+                        detailHTML = `<span class="text-[10px] text-blue-500 block mt-0.5">検査実施中</span>`;
+                        break;
+                    
+                    case 'pickup_requested':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-700 animate-pulse"><i class="fa-solid fa-person-walking-arrow-right mr-1"></i>お迎え確認中</span>`;
+                        const pickTime = p.pickupScheduledTime || '時間指定';
+                        detailHTML = `<span class="text-[10px] text-amber-600 block mt-0.5">${p.pickupCallType === 'scheduled' ? `打診中 (${pickTime}お迎え希望)` : '打診中 (今すぐお迎え希望)'}</span>`;
+                        break;
+
+                    case 'pickup_replied':
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800"><i class="fa-solid fa-check mr-1"></i>お迎え確定</span>`;
+                        let repDetail = "お迎え向かっています";
+                        if(p.pickupReplyType === 'go_now') repDetail = "今から迎えに行く (了解)";
+                        if(p.pickupReplyType === 'when_free') repDetail = "手が空き次第行く (了解)";
+                        if(p.pickupReplyType === 'custom_time') repDetail = `${p.pickupReplyTime} 頃行く (了解)`;
+                        detailHTML = `<span class="text-[10px] text-emerald-600 block mt-0.5 font-mono">${repDetail} [${p.pickupRepliedAt} 応答]</span>`;
                         break;
                 }
 
+                // 操作アクションボタンの制御
                 let actionHTML = "";
-                if(p.status === 'waiting') actionHTML = `<button onclick="openCallModal('${p.id}', '${p.name}', '${p.baseExamType}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"><i class="fa-solid fa-phone mr-1"></i> 搬送確認</button>`;
-                else if(p.status === 'called') actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'waiting')" class="px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded text-xs hover:bg-red-100">取消</button>`;
-                else if(p.status === 'ready' || p.status === 'delayed') actionHTML = `<div class="flex flex-col gap-1 max-w-[120px] mx-auto"><button onclick="updatePatientStatus('${p.id}', 'transfer_requested')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold shadow-sm">最終搬送指示</button><button onclick="rejectAndReset('${p.id}')" class="px-2 py-0.5 bg-gray-100 border text-gray-600 rounded text-[11px]">再調整</button></div>`;
-                else if(p.status === 'unavailable') actionHTML = `<button onclick="rejectAndReset('${p.id}')" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs border border-gray-300 hover:bg-gray-300">再調整をかける</button>`;
-                else if(p.status === 'transfer_requested') actionHTML = `<div class="flex flex-col gap-1 max-w-[120px] mx-auto"><button onclick="updatePatientStatus('${p.id}', 'completed')" class="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-xs font-bold"><i class="fa-solid fa-check mr-1"></i> 受付完了</button><button onclick="cancelTransfer('${p.id}', '${p.delayedMinutes || p.delayedTime ? 'delayed' : 'ready'}')" class="text-[10px] text-red-600 underline">指示を取消</button></div>`;
+                if(p.status === 'waiting') {
+                    actionHTML = `<button onclick="openCallModal('${p.id}', '${p.name}', '${p.baseExamType}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"><i class="fa-solid fa-phone mr-1"></i> 搬送確認</button>`;
+                } else if(p.status === 'called') {
+                    actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'waiting')" class="px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded text-xs hover:bg-red-100">取消</button>`;
+                } else if(p.status === 'ready' || p.status === 'delayed') {
+                    actionHTML = `<div class="flex flex-col gap-1 max-w-[120px] mx-auto"><button onclick="updatePatientStatus('${p.id}', 'transfer_requested')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold shadow-sm">最終搬送指示</button><button onclick="rejectAndReset('${p.id}')" class="px-2 py-0.5 bg-gray-100 border text-gray-600 rounded text-[11px]">再調整</button></div>`;
+                } else if(p.status === 'unavailable') {
+                    actionHTML = `<button onclick="rejectAndReset('${p.id}')" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs border border-gray-300 hover:bg-gray-300">再調整をかける</button>`;
+                } else if(p.status === 'transfer_requested') {
+                    // ★ 受付完了にした際、完了にするのではなく「検査中(exam_in_progress)」にしてリストに残します
+                    actionHTML = `<div class="flex flex-col gap-1 max-w-[120px] mx-auto"><button onclick="updatePatientStatus('${p.id}', 'exam_in_progress')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-md"><i class="fa-solid fa-play mr-1"></i> 受付・検査開始</button><button onclick="cancelTransfer('${p.id}', '${p.delayedMinutes || p.delayedTime ? 'delayed' : 'ready'}')" class="text-[10px] text-red-600 underline">搬送指示を取消</button></div>`;
+                } 
+                // ★ 新設：お迎えワークフロー
+                else if(p.status === 'exam_in_progress') {
+                    actionHTML = `<button onclick="openPickupModal('${p.id}', '${p.name}')" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded text-xs font-bold shadow-md"><i class="fa-solid fa-person-walking-arrow-right mr-1"></i> お迎えを依頼する</button>`;
+                } else if(p.status === 'pickup_requested') {
+                    actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'exam_in_progress')" class="px-2 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded text-xs hover:bg-amber-100">お迎えを取消</button>`;
+                } else if(p.status === 'pickup_replied') {
+                    // お迎えが到着して帰棟確認を終えた時に完全「完了(リストから消去)」にする
+                    actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'completed')" class="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-bold shadow-md"><i class="fa-solid fa-circle-check mr-1"></i> お迎え・帰棟完了</button>`;
+                }
 
                 tr.innerHTML = `
                     <td class="px-4 py-3.5 whitespace-nowrap font-mono text-gray-600">${p.time}</td>
@@ -210,6 +297,8 @@
                 tbody.appendChild(tr);
             });
         }
+
+        // --- 送り出し（搬送）用のモーダル処理 ---
 
         window.openCallModal = function(id, name, baseExamType) {
             activePatientId = id; selectedLocation = "";
@@ -241,6 +330,7 @@
 
         window.closeModal = function() { document.getElementById("call-modal").classList.add("hidden"); };
 
+        // 搬送確認の打診決定
         window.submitCallAction = async function(type, val = null) {
             const target = patientsData.find(p => p.id === activePatientId);
             if(!target) return;
@@ -252,11 +342,9 @@
             let schedTime = null;
 
             if(type === 'scheduled' && val !== null) {
-                // 手動で文字入力された時刻（例："10:30"）の場合
                 if(typeof val === 'string' && val.includes(':')) {
                     schedTime = val; 
                 } else {
-                    // "10分後" など分を加算する場合
                     d.setMinutes(d.getMinutes() + Number(val));
                     schedTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
                 }
@@ -276,6 +364,56 @@
             if(timeVal) window.submitCallAction('scheduled', timeVal);
         };
 
+        // --- ★ 新設：お迎え依頼用のモーダル・送信処理 ---
+
+        window.openPickupModal = function(id, name) {
+            activePatientId = id;
+            document.getElementById("pickup-patient-name").innerText = name;
+            document.getElementById("pickup-modal").classList.remove("hidden");
+            document.getElementById("custom-pickup-time").value = "";
+        };
+
+        window.closePickupModal = function() {
+            document.getElementById("pickup-modal").classList.add("hidden");
+        };
+
+        // お迎え依頼送信処理 (5分後、10分後、15分後、任意入力対応)
+        window.submitPickupAction = async function(type, val = null) {
+            const target = patientsData.find(p => p.id === activePatientId);
+            if(!target) return;
+
+            const d = new Date();
+            let schedPickupTime = null;
+
+            if(type === 'scheduled' && val !== null) {
+                if(typeof val === 'string' && val.includes(':')) {
+                    schedPickupTime = val;
+                } else {
+                    d.setMinutes(d.getMinutes() + Number(val));
+                    schedPickupTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                }
+            }
+
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', activePatientId);
+            await setDoc(docRef, {
+                status: 'pickup_requested',
+                pickupCallType: type,
+                pickupScheduledTime: schedPickupTime,
+                pickupReplyType: null,
+                pickupReplyTime: null,
+                pickupRepliedAt: null,
+                updatedAt: new Date().toISOString()
+            }, { merge: true });
+
+            closePickupModal();
+        };
+
+        window.submitPickupWithCustomTime = function() {
+            const timeVal = document.getElementById("custom-pickup-time").value;
+            if(timeVal) window.submitPickupAction('scheduled', timeVal);
+        };
+
+        // 共通：ステータス変更
         window.updatePatientStatus = async function(id, status) {
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', id);
             await setDoc(docRef, { status: status, updatedAt: new Date().toISOString() }, { merge: true });
