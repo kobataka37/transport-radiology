@@ -48,9 +48,7 @@
                         </tr>
                     </thead>
                     <tbody id="patient-table-body" class="bg-white divide-y divide-gray-200">
-                        <tr>
-                            <td colspan="6" class="text-center py-8 text-gray-400">データを読み込み中...</td>
-                        </tr>
+                        <tr><td colspan="6" class="text-center py-8 text-gray-400">データを読み込み中...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -68,14 +66,11 @@
                 <p class="text-sm text-gray-600 mb-4 font-semibold text-center">
                     <span id="modal-patient-name" class="font-bold text-gray-900"></span>様の <span id="modal-exam-cat" class="text-blue-600 font-bold"></span>検査室を指定してください。
                 </p>
-                <div id="location-options" class="grid grid-cols-2 gap-3">
-                    </div>
+                <div id="location-options" class="grid grid-cols-2 gap-3"></div>
             </div>
 
             <div id="modal-step-2" class="p-6 hidden">
-                <p class="text-sm text-gray-700 mb-4 font-semibold text-center">
-                    病棟への打診方法を選択してください。
-                </p>
+                <p class="text-sm text-gray-700 mb-4 font-semibold text-center">病棟への打診方法を選択してください。</p>
                 <div class="space-y-4">
                     <button onclick="submitCallAction('immediate')" class="w-full py-3 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-lg shadow transition-colors flex justify-center items-center gap-2">
                         <i class="fa-solid fa-bell"></i> 「すぐ搬送」を依頼する
@@ -129,22 +124,14 @@
         let selectedLocation = "";
         let activeExamCategory = "";
 
-        // 匿名認証
-        signInAnonymously(auth).catch(err => {
-            showError("認証エラーが発生しました。");
-        });
+        signInAnonymously(auth).catch(err => showError("認証エラーが発生しました。"));
 
-        // データ監視
         const patientsRef = collection(db, 'artifacts', appId, 'public', 'data', 'patients');
         onSnapshot(patientsRef, (snapshot) => {
             patientsData = [];
-            snapshot.forEach(doc => {
-                patientsData.push({ id: doc.id, ...doc.data() });
-            });
+            snapshot.forEach(doc => patientsData.push({ id: doc.id, ...doc.data() }));
             renderTable();
-        }, (err) => {
-            showError("Firestoreとのリアルタイム同期に失敗しました。環境を確認してください。");
-        });
+        }, (err) => showError("同期に失敗しました。"));
 
         function showError(msg) {
             document.getElementById("error-banner").classList.remove("hidden");
@@ -157,7 +144,7 @@
             
             const activePatients = patientsData.filter(p => p.status !== 'completed');
             if(activePatients.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400">対象の患者データがありません。「デモデータ初期化」を押してください。</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-gray-400">データがありません。「デモデータ初期化」を押してください。</td></tr>`;
                 return;
             }
 
@@ -168,7 +155,6 @@
                 if(p.status === 'transfer_requested') rowClass = "bg-purple-50 border-l-4 border-purple-500 font-medium";
                 tr.className = rowClass;
 
-                // ステータスバッジの解析
                 let badgeHTML = "";
                 let detailHTML = p.repliedAt ? `<span class="text-[10px] text-gray-400 block mt-0.5 font-mono">${p.repliedAt} 応答</span>` : "";
                 
@@ -178,7 +164,8 @@
                         break;
                     case 'called':
                         badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 animate-pulse"><i class="fa-solid fa-bell mr-1"></i>確認中</span>`;
-                        detailHTML = `<span class="text-[10px] text-red-500 block mt-0.5">${p.callType === 'scheduled' ? `打診中 (${p.scheduledTime}希望)` : '打診中 (すぐ希望)'}</span>`;
+                        const reqTime = p.scheduledTime || '時間指定';
+                        detailHTML = `<span class="text-[10px] text-red-500 block mt-0.5">${p.callType === 'scheduled' ? `打診中 (${reqTime}希望)` : '打診中 (すぐ希望)'}</span>`;
                         break;
                     case 'ready':
                         badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-700"><i class="fa-regular fa-circle-check mr-1"></i>すぐ搬送可</span>`;
@@ -200,41 +187,21 @@
                         } else if(p.callType === 'scheduled' && p.scheduledTime) {
                             destTime = p.scheduledTime;
                         }
-                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700"><i class="fa-solid fa-wheelchair mr-1"></i>指示済</span>`;
+                        badgeHTML = `<span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-700"><i class="fa-solid fa-wheelchair-move mr-1"></i>指示済</span>`;
                         detailHTML = `<span class="text-[10px] text-purple-600 block mt-0.5 font-mono">${destTime} 搬送予定</span>`;
                         break;
                 }
 
-                // ボタンエリアの生成
                 let actionHTML = "";
-                if(p.status === 'waiting') {
-                    actionHTML = `<button onclick="openCallModal('${p.id}', '${p.name}', '${p.baseExamType}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"><i class="fa-solid fa-phone mr-1"></i> 搬送確認</button>`;
-                } else if(p.status === 'called') {
-                    actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'waiting')" class="px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded text-xs hover:bg-red-100">取消</button>`;
-                } else if(p.status === 'ready' || p.status === 'delayed') {
-                    actionHTML = `
-                        <div class="flex flex-col gap-1 max-w-[120px] mx-auto">
-                            <button onclick="updatePatientStatus('${p.id}', 'transfer_requested')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold shadow-sm">最終搬送指示</button>
-                            <button onclick="rejectAndReset('${p.id}')" class="px-2 py-0.5 bg-gray-100 border text-gray-600 rounded text-[11px]">再調整</button>
-                        </div>
-                    `;
-                } else if(p.status === 'unavailable') {
-                    actionHTML = `<button onclick="rejectAndReset('${p.id}')" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs border border-gray-300 hover:bg-gray-300">再調整をかける</button>`;
-                } else if(p.status === 'transfer_requested') {
-                    actionHTML = `
-                        <div class="flex flex-col gap-1 max-w-[120px] mx-auto">
-                            <button onclick="updatePatientStatus('${p.id}', 'completed')" class="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-xs font-bold"><i class="fa-solid fa-check mr-1"></i> 受付完了</button>
-                            <button onclick="cancelTransfer('${p.id}', '${p.delayedMinutes || p.delayedTime ? 'delayed' : 'ready'}')" class="text-[10px] text-red-600 underline">指示を取消</button>
-                        </div>
-                    `;
-                }
+                if(p.status === 'waiting') actionHTML = `<button onclick="openCallModal('${p.id}', '${p.name}', '${p.baseExamType}')" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold shadow-sm"><i class="fa-solid fa-phone mr-1"></i> 搬送確認</button>`;
+                else if(p.status === 'called') actionHTML = `<button onclick="updatePatientStatus('${p.id}', 'waiting')" class="px-2 py-1 bg-red-50 text-red-700 border border-red-200 rounded text-xs hover:bg-red-100">取消</button>`;
+                else if(p.status === 'ready' || p.status === 'delayed') actionHTML = `<div class="flex flex-col gap-1 max-w-[120px] mx-auto"><button onclick="updatePatientStatus('${p.id}', 'transfer_requested')" class="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs font-bold shadow-sm">最終搬送指示</button><button onclick="rejectAndReset('${p.id}')" class="px-2 py-0.5 bg-gray-100 border text-gray-600 rounded text-[11px]">再調整</button></div>`;
+                else if(p.status === 'unavailable') actionHTML = `<button onclick="rejectAndReset('${p.id}')" class="px-3 py-1 bg-gray-200 text-gray-700 rounded text-xs border border-gray-300 hover:bg-gray-300">再調整をかける</button>`;
+                else if(p.status === 'transfer_requested') actionHTML = `<div class="flex flex-col gap-1 max-w-[120px] mx-auto"><button onclick="updatePatientStatus('${p.id}', 'completed')" class="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-xs font-bold"><i class="fa-solid fa-check mr-1"></i> 受付完了</button><button onclick="cancelTransfer('${p.id}', '${p.delayedMinutes || p.delayedTime ? 'delayed' : 'ready'}')" class="text-[10px] text-red-600 underline">指示を取消</button></div>`;
 
                 tr.innerHTML = `
                     <td class="px-4 py-3.5 whitespace-nowrap font-mono text-gray-600">${p.time}</td>
-                    <td class="px-4 py-3.5 whitespace-nowrap font-bold text-gray-900">
-                        ${p.name} 様
-                        ${p.note ? `<span class="block text-[10px] text-red-600 bg-red-50 border border-red-100 rounded px-1 mt-0.5 font-normal">⚠️ ${p.note}</span>` : ''}
-                    </td>
+                    <td class="px-4 py-3.5 whitespace-nowrap font-bold text-gray-900">${p.name} 様${p.note ? `<span class="block text-[10px] text-red-600 bg-red-50 border border-red-100 rounded px-1 mt-0.5 font-normal">⚠️ ${p.note}</span>` : ''}</td>
                     <td class="px-4 py-3.5 whitespace-nowrap text-gray-500">${p.ward}</td>
                     <td class="px-4 py-3.5 whitespace-nowrap text-gray-700 font-semibold">${p.examType}</td>
                     <td class="px-4 py-3.5 whitespace-nowrap">${badgeHTML}${detailHTML}</td>
@@ -244,44 +211,22 @@
             });
         }
 
-        // グローバル関数として公開
         window.openCallModal = function(id, name, baseExamType) {
-            activePatientId = id;
-            selectedLocation = "";
+            activePatientId = id; selectedLocation = "";
             document.getElementById("modal-patient-name").innerText = name;
             document.getElementById("call-modal").classList.remove("hidden");
-            
-            const isCT = baseExamType.includes("CT");
-            const isMRI = baseExamType.includes("MRI");
-            
-            const step1 = document.getElementById("modal-step-1");
-            const step2 = document.getElementById("modal-step-2");
-            const backBtn = document.getElementById("modal-back-btn");
+            const isCT = baseExamType.includes("CT"), isMRI = baseExamType.includes("MRI");
+            const step1 = document.getElementById("modal-step-1"), step2 = document.getElementById("modal-step-2"), backBtn = document.getElementById("modal-back-btn");
 
             if(isCT || isMRI) {
                 activeExamCategory = isCT ? "CT" : "MRI";
                 document.getElementById("modal-exam-cat").innerText = activeExamCategory;
-                step1.classList.remove("hidden");
-                step2.classList.add("hidden");
-                backBtn.classList.add("hidden");
-                
+                step1.classList.remove("hidden"); step2.classList.add("hidden"); backBtn.classList.add("hidden");
                 const optDiv = document.getElementById("location-options");
-                if(isCT) {
-                    optDiv.innerHTML = `
-                        <button onclick="selectLocationAction('南館1階')" class="p-3 bg-blue-50 border-2 border-blue-600 font-bold rounded-lg text-sm text-center">南館 1階<span class="block text-xs font-normal text-blue-500">CT室</span></button>
-                        <button onclick="selectLocationAction('南館地下')" class="p-3 bg-indigo-50 border-2 border-indigo-600 font-bold rounded-lg text-sm text-center">南館 地下<span class="block text-xs font-normal text-indigo-500">CT室</span></button>
-                    `;
-                } else {
-                    optDiv.innerHTML = `
-                        <button onclick="selectLocationAction('002')" class="p-3 bg-emerald-50 border-2 border-emerald-600 font-bold font-mono rounded-lg text-sm text-center">002<span class="block text-xs font-normal font-sans text-emerald-600">MRI室</span></button>
-                        <button onclick="selectLocationAction('007')" class="p-3 bg-teal-50 border-2 border-teal-600 font-bold font-mono rounded-lg text-sm text-center">007<span class="block text-xs font-normal font-sans text-teal-600">MRI室</span></button>
-                    `;
-                }
+                if(isCT) optDiv.innerHTML = `<button onclick="selectLocationAction('南館1階')" class="p-3 bg-blue-50 border-2 border-blue-600 font-bold rounded-lg text-sm text-center">南館 1階<span class="block text-xs font-normal text-blue-500">CT室</span></button><button onclick="selectLocationAction('南館地下')" class="p-3 bg-indigo-50 border-2 border-indigo-600 font-bold rounded-lg text-sm text-center">南館 地下<span class="block text-xs font-normal text-indigo-500">CT室</span></button>`;
+                else optDiv.innerHTML = `<button onclick="selectLocationAction('002')" class="p-3 bg-emerald-50 border-2 border-emerald-600 font-bold font-mono rounded-lg text-sm text-center">002<span class="block text-xs font-normal font-sans text-emerald-600">MRI室</span></button><button onclick="selectLocationAction('007')" class="p-3 bg-teal-50 border-2 border-teal-600 font-bold font-mono rounded-lg text-sm text-center">007<span class="block text-xs font-normal font-sans text-teal-600">MRI室</span></button>`;
             } else {
-                activeExamCategory = "OTHER";
-                step1.classList.add("hidden");
-                step2.classList.remove("hidden");
-                backBtn.classList.add("hidden");
+                activeExamCategory = "OTHER"; step1.classList.add("hidden"); step2.classList.remove("hidden"); backBtn.classList.add("hidden");
             }
         };
 
@@ -289,19 +234,12 @@
             selectedLocation = loc;
             document.getElementById("modal-step-1").classList.add("hidden");
             document.getElementById("modal-step-2").classList.remove("hidden");
-            
             const backBtn = document.getElementById("modal-back-btn");
             backBtn.classList.remove("hidden");
-            backBtn.onclick = () => {
-                document.getElementById("modal-step-1").classList.remove("hidden");
-                document.getElementById("modal-step-2").classList.add("hidden");
-                backBtn.classList.add("hidden");
-            };
+            backBtn.onclick = () => { document.getElementById("modal-step-1").classList.remove("hidden"); document.getElementById("modal-step-2").classList.add("hidden"); backBtn.classList.add("hidden"); };
         };
 
-        window.closeModal = function() {
-            document.getElementById("call-modal").classList.add("hidden");
-        };
+        window.closeModal = function() { document.getElementById("call-modal").classList.add("hidden"); };
 
         window.submitCallAction = async function(type, val = null) {
             const target = patientsData.find(p => p.id === activePatientId);
@@ -311,22 +249,23 @@
             if(selectedLocation) finalExamType = `${target.baseExamType} [${selectedLocation}]`;
 
             const d = new Date();
-            const nowStr = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
             let schedTime = null;
 
-            if(type === 'scheduled' && typeof val === 'number') {
-                d.setMinutes(d.getMinutes() + val);
-                schedTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+            if(type === 'scheduled' && val !== null) {
+                // 手動で文字入力された時刻（例："10:30"）の場合
+                if(typeof val === 'string' && val.includes(':')) {
+                    schedTime = val; 
+                } else {
+                    // "10分後" など分を加算する場合
+                    d.setMinutes(d.getMinutes() + Number(val));
+                    schedTime = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+                }
             }
 
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', activePatientId);
             await setDoc(docRef, {
-                status: 'called',
-                examType: finalExamType,
-                callType: type,
-                scheduledTime: schedTime,
-                note: "", delayedMinutes: null, delayedTime: null, delayType: null, repliedAt: null,
-                updatedAt: new Date().toISOString()
+                status: 'called', examType: finalExamType, callType: type, scheduledTime: schedTime,
+                note: "", delayedMinutes: null, delayedTime: null, delayType: null, repliedAt: null, updatedAt: new Date().toISOString()
             }, { merge: true });
 
             closeModal();
@@ -334,9 +273,7 @@
 
         window.submitCallWithCustomTime = function() {
             const timeVal = document.getElementById("custom-call-time").value;
-            if(timeVal) {
-                window.submitCallAction('scheduled', timeVal);
-            }
+            if(timeVal) window.submitCallAction('scheduled', timeVal);
         };
 
         window.updatePatientStatus = async function(id, status) {
@@ -353,15 +290,11 @@
             const p = patientsData.find(x => x.id === id);
             const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'patients', id);
             await setDoc(docRef, {
-                status: 'waiting',
-                examType: p.baseExamType,
-                note: "時間不都合等のため再調整中",
-                callType: null, scheduledTime: null, delayedMinutes: null, delayedTime: null, delayType: null, repliedAt: null,
-                updatedAt: new Date().toISOString()
+                status: 'waiting', examType: p.baseExamType, note: "時間不都合等のため再調整中",
+                callType: null, scheduledTime: null, delayedMinutes: null, delayedTime: null, delayType: null, repliedAt: null, updatedAt: new Date().toISOString()
             }, { merge: true });
         };
 
-        // 初期デモデータの投入ロジック
         document.getElementById("btn-init").onclick = async function() {
             const INITIAL_PATIENTS = [
                 { name: "一宮 太郎", ward: "A病棟", examType: "CT(頭部)", baseExamType: "CT(頭部)", time: "10:00", status: "waiting", note: "" },
