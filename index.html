@@ -182,7 +182,8 @@
             document.getElementById("error-message").innerText = msg;
         }
 
-        //        function renderTable() {
+        // ▼ 修正: コメントアウトを解除しました
+        function renderTable() {
             const tbody = document.getElementById("patient-table-body");
             tbody.innerHTML = "";
             
@@ -296,7 +297,7 @@
                 `;
                 tbody.appendChild(tr);
             });
-        }
+        } // ▼ 修正: 閉じカッコを追加しました
 
         // --- 送り出し（搬送）用のモーダル処理 ---
 
